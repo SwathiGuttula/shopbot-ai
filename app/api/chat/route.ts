@@ -13,42 +13,43 @@ export async function POST(req: NextRequest) {
   try {
     const { messages } = await req.json();
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ text: "API key not configured. Please add GEMINI_API_KEY to Vercel environment variables.", products: [] });
+      return NextResponse.json({ text: "API key not configured. Please add GROQ_API_KEY to Vercel environment variables.", products: [] });
     }
 
-    const contents = messages.map((m: { role: string; content: string }) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
-    }));
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents,
-          generationConfig: { maxOutputTokens: 1000, temperature: 0.7 },
-        }),
-      }
-    );
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "llama3-8b-8192",
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          ...messages.map((m: { role: string; content: string }) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        ],
+        max_tokens: 1000,
+        temperature: 0.7,
+      }),
+    });
 
     if (!response.ok) {
       const err = await response.text();
-      console.error("Gemini error:", err);
-      return NextResponse.json({ text: "AI service error. Please try again.", products: [] });
+      console.error("Groq error:", err);
+      return NextResponse.json({ text: "AI service error: " + err.slice(0, 100), products: [] });
     }
 
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Sorry, I couldn't generate a response.";
+    const text = data.choices?.[0]?.message?.content ?? "Sorry, I couldn't generate a response.";
 
     const productMatch = text.match(/<products>([\s\S]*?)<\/products>/);
     let products = [];
     const cleanText = text.replace(/<products>[\s\S]*?<\/products>/g, "").trim();
-
     if (productMatch) {
       try { products = JSON.parse(productMatch[1]); } catch {}
     }
